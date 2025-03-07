@@ -16,10 +16,9 @@ from dateutil.parser import parse
 from .bases.basejob import BaseJob
 from .bases.baseplace import BasePlace
 from .bases.baseuniverse import BaseUniverse
+from .utilities.shared import ClientSharedObject
 
 if TYPE_CHECKING:
-    from .client import Client
-    from .bases.baseuser import BaseUser
     from .utilities.types import UserOrUserId
 
 
@@ -45,39 +44,38 @@ class Presence:
         job: The job of the root place that the user is playing or editing.
         universe: The universe the user is playing or editing.
         last_online: When the user was last online.
-        user: The user this presence belongs to.
     """
 
-    def __init__(self, client: Client, data: dict):
+    def __init__(self, shared: ClientSharedObject, data: dict):
         """
         Arguments:
-            client: Client object.
+            shared: Shared object.
             data: The data from the request.
         """
-        self._client: Client = client
+        self._shared: ClientSharedObject = shared
 
         self.user_presence_type: PresenceType = PresenceType(data["userPresenceType"])
         self.last_location: str = data["lastLocation"]
 
         self.place: Optional[BasePlace] = BasePlace(
-            client=client,
+            shared=shared,
             place_id=data["placeId"]
         ) if data.get("placeId") else None
 
         self.root_place: Optional[BasePlace] = BasePlace(
-            client=client,
+            shared=shared,
             place_id=data["rootPlaceId"]
         ) if data.get("rootPlaceId") else None
 
-        self.job: Optional[BaseJob] = BaseJob(self._client, data["gameId"]) if data.get("gameId") else None
+        self.job: Optional[BaseJob] = BaseJob(self._shared, data["gameId"]) if data.get("gameId") else None
 
         self.universe: Optional[BaseUniverse] = BaseUniverse(
-            client=client,
+            shared=shared,
             universe_id=data["universeId"]
         ) if data.get("universeId") else None
 
-        self.user: BaseUser = client.get_base_user(data["userId"])
-        self.last_online: datetime = parse(data["lastOnline"])
+        # self.user: BaseUser = BaseUser(self._shared, data["userId"])
+        self.last_online: Optional[datetime] = parse(data["lastOnline"]) if data.get("lastOnline") else None
 
     def __repr__(self):
         return f"<{self.__class__.__name__} user_presence_type={self.user_presence_type}>"
@@ -89,8 +87,8 @@ class PresenceProvider:
     for fetching user presence information.
     """
 
-    def __init__(self, client: Client):
-        self._client: Client = client
+    def __init__(self, shared: ClientSharedObject):
+        self._shared: ClientSharedObject = shared
 
     async def get_user_presences(self, users: List[UserOrUserId]) -> List[Presence]:
         """
@@ -103,11 +101,11 @@ class PresenceProvider:
             A list of Presences.
         """
 
-        presences_response = await self._client.requests.post(
-            url=self._client.url_generator.get_url("presence", "v1/presence/users"),
+        presences_response = await self._shared.requests.post(
+            url=self._shared.url_generator.get_url("presence", "v1/presence/users"),
             json={
                 "userIds": list(map(int, users))
             }
         )
         presences_data = presences_response.json()["userPresences"]
-        return [Presence(client=self._client, data=presence_data) for presence_data in presences_data]
+        return [Presence(shared=self._shared, data=presence_data) for presence_data in presences_data]
